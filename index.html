@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BTC Pair API Test</title>
+<style>
+  * { margin:0;padding:0;box-sizing:border-box; }
+  body { background:#080b0f;color:#e8edf2;font-family:'JetBrains Mono',monospace;font-size:12px;padding:20px; }
+  h1 { color:#ffd54f;font-size:16px;margin-bottom:16px;letter-spacing:0.1em; }
+  h2 { color:#00e676;font-size:12px;margin:16px 0 8px;letter-spacing:0.1em;border-bottom:1px solid rgba(255,255,255,0.07);padding-bottom:4px; }
+  .grid { display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px; }
+  .stat { background:#0d1117;border:1px solid rgba(255,255,255,0.07);padding:12px; }
+  .stat-label { font-size:9px;color:#5a6470;letter-spacing:0.12em;margin-bottom:4px; }
+  .stat-val { font-size:22px;font-weight:700;color:#ffd54f; }
+  .log { background:#0d1117;border:1px solid rgba(255,255,255,0.07);padding:12px;height:200px;overflow-y:auto;margin-bottom:12px;font-size:10px;line-height:1.8; }
+  .ok  { color:#00e676; }
+  .warn{ color:#ffd54f; }
+  .err { color:#ff4444; }
+  .muted{ color:#5a6470; }
+  table { width:100%;border-collapse:collapse;font-size:10px; }
+  th { background:#0d1117;color:#5a6470;font-size:8px;letter-spacing:0.1em;padding:6px 8px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.07); }
+  td { padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.04); }
+  tr:hover td { background:rgba(255,255,255,0.02); }
+  .tag { display:inline-block;padding:1px 6px;border-radius:2px;font-size:8px;font-weight:700;letter-spacing:0.08em; }
+  .tag.yes { background:rgba(0,230,118,0.15);color:#00e676; }
+  .tag.no  { background:rgba(255,68,68,0.12);color:#ff4444; }
+  .tag.lev { background:rgba(255,213,79,0.12);color:#ffd54f; }
+  .tag.dup { background:rgba(130,130,130,0.12);color:#878b94; }
+  button { background:rgba(255,213,79,0.12);border:1px solid rgba(255,213,79,0.4);color:#ffd54f;
+    padding:8px 20px;cursor:pointer;font-family:inherit;font-size:10px;letter-spacing:0.1em;
+    text-transform:uppercase;margin-right:8px;margin-bottom:12px; }
+  button:hover { background:rgba(255,213,79,0.22); }
+  button:disabled { opacity:0.4;cursor:not-allowed; }
+  #table-wrap { max-height:400px;overflow-y:auto; }
+  .filter-row { display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap; }
+  .filter-row input[type=text] { background:#0d1117;border:1px solid rgba(255,255,255,0.1);
+    color:#e8edf2;padding:4px 8px;font-family:inherit;font-size:10px;width:160px; }
+  .filter-row label { font-size:9px;color:#5a6470;display:flex;align-items:center;gap:4px;cursor:pointer; }
+  #kline-test { background:#0d1117;border:1px solid rgba(255,255,255,0.07);padding:12px;margin-top:12px; }
+  .kline-row { display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap; }
+  .kline-row input { background:#0d1117;border:1px solid rgba(255,255,255,0.1);
+    color:#e8edf2;padding:4px 8px;font-family:inherit;font-size:10px;width:100px; }
+  .kline-row select { background:#0d1117;border:1px solid rgba(255,255,255,0.1);
+    color:#e8edf2;padding:4px 8px;font-family:inherit;font-size:10px; }
+</style>
+</head>
+<body>
+
+<h1>₿ BTC PAIR API TEST — BINANCE SPOT</h1>
+
+<button id="runBtn" onclick="runTest()">▶ RUN FULL TEST</button>
+<button onclick="clearLog()">✕ CLEAR LOG</button>
+
+<div class="grid">
+  <div class="stat"><div class="stat-label">ALL BTC SYMBOLS</div><div class="stat-val" id="s-all">—</div></div>
+  <div class="stat"><div class="stat-label">STATUS: TRADING</div><div class="stat-val" id="s-trading">—</div></div>
+  <div class="stat"><div class="stat-label">isSpotAllowed=true</div><div class="stat-val" id="s-spot">—</div></div>
+  <div class="stat"><div class="stat-label">FINAL (deduped+clean)</div><div class="stat-val" id="s-final" style="color:#00e676">—</div></div>
+</div>
+<div class="grid">
+  <div class="stat"><div class="stat-label">LEVERAGED TOKENS</div><div class="stat-val" id="s-lev" style="color:#ffd54f">—</div></div>
+  <div class="stat"><div class="stat-label">DUPLICATES REMOVED</div><div class="stat-val" id="s-dup">—</div></div>
+  <div class="stat"><div class="stat-label">SPOT=FALSE EXCLUDED</div><div class="stat-val" id="s-excl">—</div></div>
+  <div class="stat"><div class="stat-label">CANDLE TEST STATUS</div><div class="stat-val" id="s-candle" style="font-size:12px">—</div></div>
+</div>
+
+<div class="log" id="log"></div>
+
+<!-- Symbol table -->
+<h2>ALL BTC PAIRS BREAKDOWN</h2>
+<div class="filter-row">
+  <input type="text" id="search" placeholder="Search symbol..." oninput="filterTable()">
+  <label><input type="checkbox" id="show-lev" onchange="filterTable()"> Show leveraged</label>
+  <label><input type="checkbox" id="show-excl" onchange="filterTable()"> Show spot=false</label>
+  <label><input type="checkbox" id="show-dup" onchange="filterTable()"> Show duplicates</label>
+  <span id="table-count" style="font-size:9px;color:#5a6470"></span>
+</div>
+<div id="table-wrap">
+  <table>
+    <thead><tr>
+      <th>SYMBOL</th><th>BASE</th><th>STATUS</th>
+      <th>SPOT ALLOWED</th><th>OTC ALLOWED</th><th>FLAGS</th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<!-- Kline test -->
+<div id="kline-test">
+  <h2 style="margin-top:0">CANDLE FETCH TEST</h2>
+  <div class="kline-row">
+    <input type="text" id="kline-sym" value="ETH" placeholder="Base asset">
+    <select id="kline-tf">
+      <option value="5m">5m</option>
+      <option value="15m">15m</option>
+      <option value="1h" selected>1H</option>
+      <option value="4h">4H</option>
+      <option value="1d">1D</option>
+      <option value="1w">1W</option>
+    </select>
+    <button onclick="testKline()" style="margin:0">FETCH CANDLES</button>
+    <span id="kline-result" style="font-size:10px;color:#5a6470"></span>
+  </div>
+  <div id="kline-sample" style="font-size:9px;color:#5a6470;line-height:2"></div>
+</div>
+
+<script>
+const BINANCE_SPOT = 'https://api.binance.com/api/v3';
+let _allSymbols = [];
+
+function log(msg, cls='') {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = new Date().toTimeString().slice(0,8) + ' · ' + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog() { document.getElementById('log').innerHTML = ''; }
+function setStat(id, val) { document.getElementById(id).textContent = val; }
+
+const LEVERAGED = /(UP|DOWN|BULL|BEAR|3L|3S|2L|2S|5L|5S)$/i;
+
+async function runTest() {
+  document.getElementById('runBtn').disabled = true;
+  clearLog();
+  document.getElementById('tbody').innerHTML = '';
+  log('Fetching Binance Spot exchangeInfo...', 'muted');
+
+  try {
+    const r = await fetch(`${BINANCE_SPOT}/exchangeInfo`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    log(`exchangeInfo OK — total symbols: ${d.symbols.length}`, 'ok');
+
+    // All BTC quote
+    const allBTC = d.symbols.filter(s => s.quoteAsset === 'BTC');
+    setStat('s-all', allBTC.length);
+    log(`BTC quote pairs: ${allBTC.length}`, 'ok');
+
+    // Status TRADING
+    const trading = allBTC.filter(s => s.status === 'TRADING');
+    setStat('s-trading', trading.length);
+    log(`Status TRADING: ${trading.length}`, 'ok');
+
+    // isSpotTradingAllowed
+    const spotAllowed = trading.filter(s => s.isSpotTradingAllowed === true);
+    setStat('s-spot', spotAllowed.length);
+    log(`isSpotTradingAllowed=true: ${spotAllowed.length} (this is why you were getting ~72!)`, 'warn');
+    log(`isSpotTradingAllowed=false but TRADING: ${trading.length - spotAllowed.length}`, 'warn');
+
+    // Breakdown each symbol
+    const seen = new Set();
+    let levCount = 0, dupCount = 0, exclCount = 0;
+    const rows = [];
+    const finalBases = [];
+
+    for (const s of trading) {
+      const base   = s.baseAsset;
+      const isLev  = LEVERAGED.test(base);
+      const isDup  = seen.has(base);
+      const isExcl = !s.isSpotTradingAllowed;
+      const flags  = [];
+
+      if (isLev)  { flags.push('LEVERAGED'); levCount++; }
+      if (isDup)  { flags.push('DUPLICATE'); dupCount++; }
+      if (isExcl) { flags.push('SPOT=FALSE'); exclCount++; }
+
+      if (!isLev && !isDup) {
+        seen.add(base);
+        finalBases.push(base);
+      }
+
+      rows.push({ s, base, isLev, isDup, isExcl, flags });
+    }
+
+    setStat('s-lev',  levCount);
+    setStat('s-dup',  dupCount);
+    setStat('s-excl', exclCount);
+    setStat('s-final', finalBases.length);
+
+    log(`Leveraged tokens filtered: ${levCount}`, 'warn');
+    log(`Duplicates removed: ${dupCount}`, 'muted');
+    log(`Coins with isSpotTradingAllowed=false (but TRADING): ${exclCount}`, 'warn');
+    log(`✓ FINAL scannable BTC pairs: ${finalBases.length}`, 'ok');
+    log(`Sample: ${finalBases.slice(0,10).join(', ')}...`, 'muted');
+
+    _allSymbols = rows;
+    renderTable(rows);
+
+    // Now test candle fetch on a few coins
+    log('Testing candle fetch on 5 random pairs...', 'muted');
+    let candleOk = 0, candleFail = 0;
+    const testSample = finalBases.filter(() => Math.random() < 0.1).slice(0, 5);
+    for (const base of testSample) {
+      try {
+        const cr = await fetch(`${BINANCE_SPOT}/klines?symbol=${base}BTC&interval=1h&limit=5`);
+        const cd = await cr.json();
+        if (Array.isArray(cd) && cd.length > 0) {
+          candleOk++;
+          log(`  ✓ ${base}BTC — ${cd.length} candles, last close: ${parseFloat(cd[cd.length-1][4]).toExponential(4)}`, 'ok');
+        } else {
+          candleFail++;
+          log(`  ✗ ${base}BTC — empty response`, 'err');
+        }
+      } catch(e) {
+        candleFail++;
+        log(`  ✗ ${base}BTC — ${e.message}`, 'err');
+      }
+    }
+    setStat('s-candle', `${candleOk}✓ ${candleFail}✗`);
+    log(`Candle test done: ${candleOk} passed, ${candleFail} failed`, candleFail === 0 ? 'ok' : 'warn');
+
+  } catch(e) {
+    log('ERROR: ' + e.message, 'err');
+  } finally {
+    document.getElementById('runBtn').disabled = false;
+  }
+}
+
+function renderTable(rows) {
+  const showLev  = document.getElementById('show-lev').checked;
+  const showExcl = document.getElementById('show-excl').checked;
+  const showDup  = document.getElementById('show-dup').checked;
+  const search   = document.getElementById('search').value.toLowerCase();
+
+  const filtered = rows.filter(r => {
+    if (!showLev  && r.isLev)  return false;
+    if (!showDup  && r.isDup)  return false;
+    if (!showExcl && r.isExcl && !r.isLev && !r.isDup) return false;
+    if (search && !r.s.symbol.toLowerCase().includes(search) && !r.base.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  document.getElementById('table-count').textContent = `Showing ${filtered.length} of ${rows.length}`;
+
+  document.getElementById('tbody').innerHTML = filtered.map(r => `
+    <tr>
+      <td>${r.s.symbol}</td>
+      <td>${r.base}</td>
+      <td>${r.s.status}</td>
+      <td><span class="tag ${r.s.isSpotTradingAllowed?'yes':'no'}">${r.s.isSpotTradingAllowed?'YES':'NO'}</span></td>
+      <td><span class="tag ${r.s.isMarginTradingAllowed?'yes':'no'}">${r.s.isMarginTradingAllowed?'YES':'NO'}</span></td>
+      <td>${r.flags.map(f=>
+        `<span class="tag ${f==='LEVERAGED'?'lev':f==='DUPLICATE'?'dup':'no'}">${f}</span>`
+      ).join(' ')}</td>
+    </tr>`).join('');
+}
+
+function filterTable() { renderTable(_allSymbols); }
+
+async function testKline() {
+  const sym = document.getElementById('kline-sym').value.toUpperCase().trim();
+  const tf  = document.getElementById('kline-tf').value;
+  const res = document.getElementById('kline-result');
+  const sample = document.getElementById('kline-sample');
+  res.textContent = 'Fetching...';
+  sample.textContent = '';
+  try {
+    const r = await fetch(`${BINANCE_SPOT}/klines?symbol=${sym}BTC&interval=${tf}&limit=10`);
+    const d = await r.json();
+    if (!Array.isArray(d) || d.length === 0) {
+      res.textContent = '✗ No data — ' + sym + 'BTC pair may not exist';
+      res.style.color = '#ff4444';
+      return;
+    }
+    res.textContent = `✓ ${sym}BTC — ${d.length} candles on ${tf}`;
+    res.style.color = '#00e676';
+    // Show last 3 candles
+    const last3 = d.slice(-3);
+    sample.innerHTML = last3.map(k => {
+      const t = new Date(+k[0]).toUTCString().slice(5,22);
+      return `${t}  O:${parseFloat(k[1]).toExponential(4)}  H:${parseFloat(k[2]).toExponential(4)}  L:${parseFloat(k[3]).toExponential(4)}  C:${parseFloat(k[4]).toExponential(4)}  V:${parseFloat(k[5]).toFixed(2)}`;
+    }).join('\n');
+  } catch(e) {
+    res.textContent = '✗ Error: ' + e.message;
+    res.style.color = '#ff4444';
+  }
+}
+</script>
+</body>
+</html>
